@@ -10,14 +10,24 @@ import type {
   MemoryQmdIndexPath,
   MemoryQmdMcporterConfig,
   MemoryQmdSearchMode,
+  MemoryRuticConfig,
 } from "../config/types.memory.js";
 import { resolveUserPath } from "../utils.js";
 import { splitShellArgs } from "../utils/shell-argv.js";
+
+export type ResolvedRuticConfig = {
+  url: string;
+  namespace: string;
+  maxResults: number;
+  maxInjectedChars: number;
+  timeoutMs: number;
+};
 
 export type ResolvedMemoryBackendConfig = {
   backend: MemoryBackend;
   citations: MemoryCitationsMode;
   qmd?: ResolvedQmdConfig;
+  rutic?: ResolvedRuticConfig;
 };
 
 export type ResolvedQmdCollection = {
@@ -294,12 +304,42 @@ function resolveDefaultCollections(
   }));
 }
 
+function resolveRuticConfig(
+  raw: MemoryRuticConfig | undefined,
+  agentId: string,
+): ResolvedRuticConfig | null {
+  if (!raw?.url?.trim()) {
+    return null;
+  }
+  const agentScoped = raw.agentScoped !== false;
+  const namespace = agentScoped
+    ? sanitizeName(agentId)
+    : (raw.namespace?.trim() || "global");
+  return {
+    url: raw.url.trim().replace(/\/$/, ""),
+    namespace,
+    maxResults: raw.maxResults && raw.maxResults > 0 ? raw.maxResults : 6,
+    maxInjectedChars: raw.maxInjectedChars && raw.maxInjectedChars > 0 ? raw.maxInjectedChars : 4_000,
+    timeoutMs: raw.timeoutMs && raw.timeoutMs > 0 ? raw.timeoutMs : 4_000,
+  };
+}
+
 export function resolveMemoryBackendConfig(params: {
   cfg: OpenClawConfig;
   agentId: string;
 }): ResolvedMemoryBackendConfig {
   const backend = params.cfg.memory?.backend ?? DEFAULT_BACKEND;
   const citations = params.cfg.memory?.citations ?? DEFAULT_CITATIONS;
+
+  if (backend === "rutic") {
+    const rutic = resolveRuticConfig(params.cfg.memory?.rutic, params.agentId);
+    if (rutic) {
+      return { backend: "rutic", citations, rutic };
+    }
+    // rutic.url 미설정 시 builtin으로 폴백
+    return { backend: "builtin", citations };
+  }
+
   if (backend !== "qmd") {
     return { backend: "builtin", citations };
   }

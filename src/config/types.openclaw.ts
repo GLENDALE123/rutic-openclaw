@@ -15,6 +15,7 @@ import type {
 } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
 import type { MemoryConfig } from "./types.memory.js";
+import type { NatsConfig } from "./types.nats.js";
 import type {
   AudioConfig,
   BroadcastConfig,
@@ -114,6 +115,7 @@ export type OpenClawConfig = {
   talk?: TalkConfig;
   gateway?: GatewayConfig;
   memory?: MemoryConfig;
+  nats?: NatsConfig;
 };
 
 export type ConfigValidationIssue = {

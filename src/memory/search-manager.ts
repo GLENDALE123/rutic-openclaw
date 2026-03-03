@@ -22,6 +22,13 @@ export async function getMemorySearchManager(params: {
   purpose?: "default" | "status";
 }): Promise<MemorySearchManagerResult> {
   const resolved = resolveMemoryBackendConfig(params);
+
+  if (resolved.backend === "rutic" && resolved.rutic) {
+    const { RuticMemoryManager } = await import("./rutic-manager.js");
+    const manager = new RuticMemoryManager(resolved.rutic);
+    return { manager };
+  }
+
   if (resolved.backend === "qmd" && resolved.qmd) {
     const statusOnly = params.purpose === "status";
     let cacheKey: string | undefined;

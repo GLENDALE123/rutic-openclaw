@@ -99,6 +99,7 @@ import { startGatewaySidecars } from "./server-startup.js";
 import { startGatewayTailscaleExposure } from "./server-tailscale.js";
 import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
+import { startNatsTransport, type NatsTransport } from "../nats/transport.js";
 import {
   getHealthCache,
   getHealthVersion,
@@ -866,6 +867,15 @@ export async function startGatewayServer(
     }));
   }
 
+  // RUTIC NATS 트랜스포트 — RUTIC_AGENT_ID 설정 시 기동
+  let natsTransport: NatsTransport | null = null;
+  if (!minimalTestGateway) {
+    natsTransport = await startNatsTransport(cfgAtStart).catch((err) => {
+      log.warn(`nats-transport: startup failed — ${String(err)}`);
+      return null;
+    });
+  }
+
   // Run gateway_start plugin hook (fire-and-forget)
   if (!minimalTestGateway) {
     const hookRunner = getGlobalHookRunner();
@@ -984,6 +994,7 @@ export async function startGatewayServer(
         skillsRefreshTimer = null;
       }
       skillsChangeUnsub();
+      await natsTransport?.close().catch(() => {});
       authRateLimiter?.dispose();
       browserAuthRateLimiter.dispose();
       channelHealthMonitor?.stop();
