@@ -53,6 +53,21 @@ type DiscordMessage = {
   mentions: Array<{ id: string }>;
 };
 
+type DiscordInteraction = {
+  id: string;
+  token: string;
+  application_id: string;
+  type: number; // 2 = APPLICATION_COMMAND
+  channel_id: string;
+  guild_id?: string;
+  user?: { id: string; username: string };
+  member?: { user: { id: string; username: string } };
+  data: {
+    name: string;
+    options?: Array<{ name: string; value: unknown }>;
+  };
+};
+
 // ── 설정 로드 ─────────────────────────────────────────────────────────────
 
 const ALLOWED_GUILD_IDS = ["1477725209116016753"]; // Oracle Discord 서버
@@ -119,6 +134,32 @@ const INTENTS =
   (1 << 12) | // DIRECT_MESSAGES
   (1 << 15); // MESSAGE_CONTENT (privileged — Developer Portal에서 활성화 필요)
 
+// Discord 슬래시 커맨드 정의 (OpenClaw 내부 커맨드 매핑)
+const SLASH_COMMANDS = [
+  { name: "compact", description: "대화 컨텍스트를 압축합니다 (/compact)" },
+  { name: "reset", description: "현재 세션을 초기화합니다 (/reset)" },
+  { name: "new", description: "새 세션을 시작합니다 (/new)" },
+  {
+    name: "think",
+    description: "추론 깊이를 설정합니다 (/think)",
+    options: [
+      {
+        name: "level",
+        description: "추론 수준 (off / low / medium / high / xhigh)",
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: "off", value: "off" },
+          { name: "low", value: "low" },
+          { name: "medium", value: "medium" },
+          { name: "high", value: "high" },
+          { name: "xhigh", value: "xhigh" },
+        ],
+      },
+    ],
+  },
+];
+
 async function discordRest(
   token: string,
   method: string,
@@ -131,7 +172,7 @@ async function discordRest(
       Authorization: `Bot ${token}`,
       "Content-Type": "application/json",
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -255,7 +296,29 @@ type DiscordBot = {
   heartbeatInterval?: NodeJS.Timeout;
   sessionId?: string;
   sequence?: number;
+  botUserId?: string; // READY 이벤트에서 설정
+  botApplicationId?: string; // READY 이벤트에서 설정
 };
+
+/** 길드에 슬래시 커맨드 등록 (READY 시 1회 실행) */
+async function registerSlashCommands(bot: DiscordBot, guildIds: string[]): Promise<void> {
+  if (!bot.botApplicationId) {
+    return;
+  }
+  for (const guildId of guildIds) {
+    try {
+      await discordRest(
+        bot.token,
+        "PUT",
+        `/applications/${bot.botApplicationId}/guilds/${guildId}/commands`,
+        SLASH_COMMANDS,
+      );
+      log.info(`[${bot.agentId}] 슬래시 커맨드 등록 완료 — guild=${guildId}`);
+    } catch (err) {
+      log.warn(`[${bot.agentId}] 슬래시 커맨드 등록 실패 guild=${guildId}: ${String(err)}`);
+    }
+  }
+}
 
 function createDiscordGateway(bot: DiscordBot, nc: NatsConnection, gatewayUrl: string): void {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
@@ -327,11 +390,23 @@ function createDiscordGateway(bot: DiscordBot, nc: NatsConnection, gatewayUrl: s
         // Dispatch
         const event = payload.t;
         if (event === "READY") {
-          const ready = payload.d as { session_id: string; user: { username: string } };
+          const ready = payload.d as {
+            session_id: string;
+            user: { id: string; username: string };
+            application: { id: string };
+          };
           bot.sessionId = ready.session_id;
-          log.info(`[${bot.agentId}] 준비 완료 — 봇: ${ready.user.username}`);
+          bot.botUserId = ready.user.id;
+          bot.botApplicationId = ready.application.id;
+          log.info(`[${bot.agentId}] 준비 완료 — 봇: ${ready.user.username} (id=${ready.user.id})`);
+          // 허용된 길드에 슬래시 커맨드 등록
+          if (bot.allowedGuildIds && bot.allowedGuildIds.length > 0) {
+            void registerSlashCommands(bot, bot.allowedGuildIds);
+          }
         } else if (event === "MESSAGE_CREATE") {
           void handleMessage(bot, nc, payload.d as DiscordMessage);
+        } else if (event === "INTERACTION_CREATE") {
+          void handleInteraction(bot, nc, payload.d as DiscordInteraction);
         }
         break;
       }
@@ -392,21 +467,31 @@ async function handleMessage(
     return;
   }
 
-  const content = msg.content.trim();
+  // 멘션 필터 — 길드 채널에서는 이 봇이 멘션된 경우에만 응답
+  // DM(guild_id 없음)은 멘션 없이도 응답
+  if (msg.guild_id && bot.botUserId) {
+    const mentioned = msg.mentions.some((m) => m.id === bot.botUserId);
+    if (!mentioned) {
+      return;
+    }
+  }
+
+  // 멘션 태그(<@id>) 제거 후 실제 내용 추출
+  const content = msg.content.replace(/<@!?\d+>/g, "").trim();
   if (!content) {
     return;
   }
 
   log.info(`[${bot.agentId}] 메시지 수신: "${content.slice(0, 60)}" from=${msg.author.id}`);
 
-  // 세션 키 = guild:channel 또는 dm:channel
+  // 세션 키 = guild:channel:user 또는 dm:channel
   const sessionKey = msg.guild_id
     ? `discord:${msg.guild_id}:${msg.channel_id}:${msg.author.id}`
     : `discord:dm:${msg.channel_id}`;
 
   const taskId = await publishToAgent(nc, bot.agentId, content, sessionKey, msg.author.id);
 
-  // 입력 중 표시 (선택)
+  // 입력 중 표시
   discordRest(bot.token, "POST", `/channels/${msg.channel_id}/typing`, null).catch(() => {});
 
   const reply = await waitForReply(nc, taskId);
@@ -424,6 +509,87 @@ async function handleMessage(
   await sendDiscordMessage(bot.token, msg.channel_id, reply, msg.id).catch((err: Error) => {
     log.warn(`[${bot.agentId}] Discord 응답 전송 실패: ${err.message}`);
   });
+}
+
+/** Discord 슬래시 커맨드 처리 */
+async function handleInteraction(
+  bot: DiscordBot,
+  nc: NatsConnection,
+  interaction: DiscordInteraction,
+): Promise<void> {
+  // APPLICATION_COMMAND(2)만 처리
+  if (interaction.type !== 2) {
+    return;
+  }
+
+  const user = interaction.user ?? interaction.member?.user;
+  if (!user) {
+    return;
+  }
+
+  // 사용자 필터
+  if (
+    bot.allowedUserIds &&
+    bot.allowedUserIds.length > 0 &&
+    !bot.allowedUserIds.includes(user.id)
+  ) {
+    // 권한 없는 사용자 — ephemeral 오류 메시지
+    await discordRest(
+      bot.token,
+      "POST",
+      `/interactions/${interaction.id}/${interaction.token}/callback`,
+      { type: 4, data: { content: "❌ 이 봇을 사용할 권한이 없습니다.", flags: 64 } },
+    ).catch(() => {});
+    return;
+  }
+
+  // OpenClaw 커맨드 body 조립
+  const cmdName = interaction.data.name;
+  const options = interaction.data.options ?? [];
+  const args = options.map((o) => String(o.value)).join(" ");
+  const body = args ? `/${cmdName} ${args}` : `/${cmdName}`;
+
+  log.info(`[${bot.agentId}] 슬래시 커맨드: ${body} from=${user.id}`);
+
+  // Discord에 즉시 "처리 중" 응답 (3초 내 필수)
+  await discordRest(
+    bot.token,
+    "POST",
+    `/interactions/${interaction.id}/${interaction.token}/callback`,
+    { type: 5 }, // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+  ).catch((err) => {
+    log.warn(`[${bot.agentId}] interaction defer 실패: ${String(err)}`);
+  });
+
+  const sessionKey = interaction.guild_id
+    ? `discord:${interaction.guild_id}:${interaction.channel_id}:${user.id}`
+    : `discord:dm:${interaction.channel_id}`;
+
+  const taskId = await publishToAgent(nc, bot.agentId, body, sessionKey, user.id);
+
+  const reply = await waitForReply(nc, taskId);
+  const replyContent = reply ?? "⏱️ 응답 시간이 초과됐습니다.";
+
+  // 원본 interaction 메시지 업데이트
+  const chunks = splitMessage(replyContent, 1990);
+  await discordRest(
+    bot.token,
+    "PATCH",
+    `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
+    { content: chunks[0] },
+  ).catch((err) => {
+    log.warn(`[${bot.agentId}] interaction 응답 전송 실패: ${String(err)}`);
+  });
+
+  // 2000자 초과 시 후속 메시지
+  for (let i = 1; i < chunks.length; i++) {
+    await discordRest(
+      bot.token,
+      "POST",
+      `/webhooks/${interaction.application_id}/${interaction.token}`,
+      { content: chunks[i] },
+    ).catch(() => {});
+  }
 }
 
 // ── 메인 ─────────────────────────────────────────────────────────────────
