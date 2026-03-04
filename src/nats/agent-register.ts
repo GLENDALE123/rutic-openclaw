@@ -56,7 +56,7 @@ export function startAgentRegistration(
     const hb: NatsHeartbeat = { agentId, timestamp: Date.now() };
     try {
       conn.publish(HEARTBEAT_SUBJECT, sc.encode(JSON.stringify(hb)));
-      log.verbose(`agent-register [${agentId}]: heartbeat`);
+      log.debug(`agent-register [${agentId}]: heartbeat`);
     } catch (err) {
       log.warn(`agent-register [${agentId}]: heartbeat failed — ${String(err)}`);
     }
