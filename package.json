@@ -51,6 +51,8 @@
     "./cli-entry": "./openclaw.mjs"
   },
   "scripts": {
+    "agent": "node --import tsx src/nats/agent-entry.ts",
+    "agent:build": "tsc -p tsconfig.json --outDir dist-agent --noEmit false && echo 'agent built to dist-agent/'",
     "android:assemble": "cd apps/android && ./gradlew :app:assembleDebug",
     "android:format": "cd apps/android && ./gradlew :app:ktlintFormat :benchmark:ktlintFormat",
     "android:install": "cd apps/android && ./gradlew :app:installDebug",

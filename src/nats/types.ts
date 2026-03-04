@@ -40,3 +40,31 @@ export type NatsReplyPayload = {
   timestamp: number;
   correlationId?: string;
 };
+
+/** _rpc.config.request 요청 페이로드 (에이전트 → gateway) */
+export type NatsConfigRequest = {
+  agentId: string;
+  timestamp: number;
+};
+
+/** _rpc.config.request 응답 페이로드 (gateway → 에이전트) */
+export type NatsConfigResponse = {
+  ok: boolean;
+  configYaml?: string;  // OpenClaw config YAML 원문
+  error?: string;
+  timestamp: number;
+};
+
+/** _rpc.agent.register 페이로드 (에이전트 → gateway) */
+export type NatsAgentRegister = {
+  agentId: string;
+  version?: string;
+  capabilities?: string[];
+  timestamp: number;
+};
+
+/** system.heartbeat 페이로드 */
+export type NatsHeartbeat = {
+  agentId: string;
+  timestamp: number;
+};
