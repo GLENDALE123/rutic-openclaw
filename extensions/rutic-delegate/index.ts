@@ -183,14 +183,26 @@ const delegateTaskTool = {
   },
 };
 
-const DELEGATE_SYSTEM_HINT = `\n\n## RUTIC 에이전트 협업
-다른 에이전트의 전문성이 필요할 때는 \`delegate_task\` 툴을 사용하세요.
+const DELEGATE_SYSTEM_HINT = `## RUTIC 에이전트 협업 지침
+
+다른 RUTIC 에이전트에게 업무를 위임할 때는 반드시 \`delegate_task\` 툴을 사용하세요.
+
+**위임 절차:**
+1. 먼저 사용자에게 무엇을 할 것인지 짧게 알린다 (예: "리서처에게 조사를 요청하겠습니다.")
+2. \`delegate_task\` 툴을 호출하여 위임한다
+3. 결과를 받으면 정리하여 사용자에게 전달한다
+
+**사용 가능한 에이전트:**
 - researcher: 시장조사, 데이터 분석, 트렌드
-- ceo: 전략 결정, 최종 판단
 - cfo: 재무 분석, 예산, ROI
 - cto: 기술 검토, 아키텍처
-- coo: 운영 계획 / cmo: 마케팅 / chro: 인사 / pm: 일정 / risk: 리스크
-에이전트가 실행 중이어야 응답 가능합니다.`;
+- coo: 운영 계획, 프로세스
+- cmo: 마케팅 전략, 브랜딩
+- chro: 인사, 채용, 조직
+- pm: 프로젝트 관리, 일정
+- risk: 리스크 분석
+
+**중요:** 에이전트에게 위임해야 할 때 직접 응답하지 말고 반드시 \`delegate_task\` 툴을 호출하세요.`;
 
 export default function register(api: OpenClawPluginApi) {
   api.registerTool(delegateTaskTool as unknown as AnyAgentTool);
