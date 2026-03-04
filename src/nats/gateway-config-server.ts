@@ -70,15 +70,20 @@ async function queryAgentConfig(agentId: string): Promise<AgentConfigRow | null>
 }
 
 /**
- * configYaml 문자열에서 model 설정을 per-agent 값으로 덮어씀.
- * 단순 문자열 치환 방식 — YAML 파싱 오버헤드 없이 처리.
+ * config 문자열에서 model primary 설정을 per-agent 값으로 덮어씀.
+ * JSON5("primary": "...") 및 YAML(model: "...") 형식 모두 지원.
  */
-function patchModelInYaml(yaml: string, model: string): string {
-  // model: "..." 라인을 교체. 없으면 끝에 추가.
-  if (/^model:/m.test(yaml)) {
-    return yaml.replace(/^model:.*$/m, `model: "${model}"`);
+function patchModelInYaml(config: string, model: string): string {
+  // JSON5/JSON: "primary": "..." 패턴 교체
+  if (/"primary"\s*:/.test(config)) {
+    return config.replace(/"primary"\s*:\s*"[^"]*"/, `"primary": "${model}"`);
   }
-  return yaml + `\nmodel: "${model}"\n`;
+  // YAML: model: "..." 라인 교체
+  if (/^model:/m.test(config)) {
+    return config.replace(/^model:.*$/m, `model: "${model}"`);
+  }
+  // 패턴 없으면 그대로 반환 (YAML 끝에 추가하면 JSON5 파싱 깨짐)
+  return config;
 }
 
 /**
