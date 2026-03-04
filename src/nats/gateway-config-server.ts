@@ -82,16 +82,16 @@ function patchModelInYaml(yaml: string, model: string): string {
 }
 
 /**
- * configYaml의 하드코딩된 /home/<user> 경로를 실행 환경의 $HOME으로 교체.
- * Oracle, 로컬 등 어느 환경에서 gateway를 실행해도 올바른 경로를 사용하도록 함.
+ * configYaml에서 workspace/agentDir 경로를 제거한다.
+ *
+ * Gateway는 어느 기기의 로컬 경로를 모르므로 경로를 배포하지 않는다.
+ * 각 에이전트 기기는 OPENCLAW_STATE_DIR 환경변수로 로컬 workspace를 결정한다.
+ * SOUL.md/세션/메모리는 Postgres이므로 workspace는 임시 디렉토리로 충분.
  */
-function patchHomePathsInYaml(yaml: string): string {
-  const home = process.env["HOME"]?.trim();
-  if (!home) {
-    return yaml;
-  }
-  // /home/<username>/... 패턴을 현재 $HOME으로 교체
-  return yaml.replace(/\/home\/[^/"'\s]+/g, home);
+function stripWorkspacePathsFromYaml(yaml: string): string {
+  return yaml
+    .replace(/^[ \t]*workspace:[ \t]*"[^"]*"[ \t]*\n?/gm, "")
+    .replace(/^[ \t]*agentDir:[ \t]*"[^"]*"[ \t]*\n?/gm, "");
 }
 
 /**
@@ -108,7 +108,7 @@ export function startGatewayConfigServer(conn: NatsConnection): GatewayConfigSer
       let res: NatsConfigResponse;
       try {
         const snapshot = await readConfigFileSnapshot();
-        let configYaml: string = patchHomePathsInYaml(snapshot.raw ?? "");
+        let configYaml: string = stripWorkspacePathsFromYaml(snapshot.raw ?? "");
 
         // agentId가 payload에 포함된 경우 Postgres에서 per-agent model 조회
         const rawPayload = sc.decode(msg.data);
@@ -155,7 +155,7 @@ export function startGatewayConfigServer(conn: NatsConnection): GatewayConfigSer
     broadcastConfigUpdate: (raw: string) => {
       const payload: NatsConfigResponse = {
         ok: true,
-        configYaml: patchHomePathsInYaml(raw),
+        configYaml: stripWorkspacePathsFromYaml(raw),
         timestamp: Date.now(),
       };
       conn.publish("config.updated", sc.encode(JSON.stringify(payload)));
