@@ -183,6 +183,20 @@ const delegateTaskTool = {
   },
 };
 
+const DELEGATE_SYSTEM_HINT = `\n\n## RUTIC 에이전트 협업
+다른 에이전트의 전문성이 필요할 때는 \`delegate_task\` 툴을 사용하세요.
+- researcher: 시장조사, 데이터 분석, 트렌드
+- ceo: 전략 결정, 최종 판단
+- cfo: 재무 분석, 예산, ROI
+- cto: 기술 검토, 아키텍처
+- coo: 운영 계획 / cmo: 마케팅 / chro: 인사 / pm: 일정 / risk: 리스크
+에이전트가 실행 중이어야 응답 가능합니다.`;
+
 export default function register(api: OpenClawPluginApi) {
   api.registerTool(delegateTaskTool as unknown as AnyAgentTool);
+
+  // 모든 에이전트 실행 전 delegate_task 사용 지침을 시스템 프롬프트에 주입
+  api.on("before_agent_start", () => {
+    return { prependContext: DELEGATE_SYSTEM_HINT };
+  });
 }
