@@ -82,6 +82,19 @@ function patchModelInYaml(yaml: string, model: string): string {
 }
 
 /**
+ * configYaml의 하드코딩된 /home/<user> 경로를 실행 환경의 $HOME으로 교체.
+ * Oracle, 로컬 등 어느 환경에서 gateway를 실행해도 올바른 경로를 사용하도록 함.
+ */
+function patchHomePathsInYaml(yaml: string): string {
+  const home = process.env["HOME"]?.trim();
+  if (!home) {
+    return yaml;
+  }
+  // /home/<username>/... 패턴을 현재 $HOME으로 교체
+  return yaml.replace(/\/home\/[^/"'\s]+/g, home);
+}
+
+/**
  * _rpc.config.request 구독을 시작하고 config 파일 내용으로 응답한다.
  * payload에 agentId가 있으면 Postgres에서 per-agent 설정을 조회해 반영한다.
  */
@@ -95,7 +108,7 @@ export function startGatewayConfigServer(conn: NatsConnection): GatewayConfigSer
       let res: NatsConfigResponse;
       try {
         const snapshot = await readConfigFileSnapshot();
-        let configYaml: string = snapshot.raw ?? "";
+        let configYaml: string = patchHomePathsInYaml(snapshot.raw ?? "");
 
         // agentId가 payload에 포함된 경우 Postgres에서 per-agent model 조회
         const rawPayload = sc.decode(msg.data);
@@ -140,7 +153,11 @@ export function startGatewayConfigServer(conn: NatsConnection): GatewayConfigSer
       sub.unsubscribe();
     },
     broadcastConfigUpdate: (raw: string) => {
-      const payload: NatsConfigResponse = { ok: true, configYaml: raw, timestamp: Date.now() };
+      const payload: NatsConfigResponse = {
+        ok: true,
+        configYaml: patchHomePathsInYaml(raw),
+        timestamp: Date.now(),
+      };
       conn.publish("config.updated", sc.encode(JSON.stringify(payload)));
       log.info("nats-config-server: config.updated 브로드캐스트");
     },
