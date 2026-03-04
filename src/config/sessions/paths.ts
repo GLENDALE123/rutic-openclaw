@@ -11,8 +11,11 @@ function resolveAgentSessionsDir(
   homedir: () => string = () => resolveRequiredHomeDir(env, os.homedir),
 ): string {
   // RUTIC_PG_URL 설정 시 임시 디렉토리 사용 (Postgres sync shim)
+  // RUTIC_AGENT_ID를 우선 사용해 에이전트별 디렉토리를 분리한다
+  // (같은 머신에서 여러 에이전트 실행 시 세션 충돌 방지)
   if (env.RUTIC_PG_URL?.trim()) {
-    const id = normalizeAgentId(agentId ?? DEFAULT_AGENT_ID);
+    const ruticId = env.RUTIC_AGENT_ID?.trim();
+    const id = normalizeAgentId(ruticId ?? agentId ?? DEFAULT_AGENT_ID);
     return path.join("/tmp", "rutic-sessions", id);
   }
   const root = resolveStateDir(env, homedir);
