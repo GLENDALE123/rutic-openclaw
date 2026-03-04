@@ -10,6 +10,11 @@ import {
 import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
 import type { OpenClawConfig } from "../../../config/config.js";
+import {
+  isPgSessionEnabled,
+  restoreSessionFromPostgres,
+  syncSessionToPostgres,
+} from "../../../config/sessions/pg-session-shim.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
@@ -50,6 +55,7 @@ import { normalizeProviderId, resolveDefaultModelForAgent } from "../../model-se
 import { createOllamaStreamFn, OLLAMA_NATIVE_BASE_URL } from "../../ollama-stream.js";
 import { createOpenAIWebSocketStreamFn, releaseWsSession } from "../../openai-ws-stream.js";
 import { resolveOwnerDisplaySetting } from "../../owner-display.js";
+import { writePgSkillsToTemp, cleanupPgSkillsTemp } from "../../pg-skills-shim.js";
 import {
   downgradeOpenAIFunctionCallReasoningPairs,
   isCloudCodeAssistFormatError,
@@ -577,9 +583,32 @@ export async function runEmbeddedAttempt(
   let restoreSkillEnv: (() => void) | undefined;
   process.chdir(effectiveWorkspace);
   try {
+    // RUTIC Postgres shim: DB 스킬을 임시 디렉토리에 기록 → extraDirs 주입
+    // RUTIC_AGENT_ID 우선 → params.agentId 폴백 (OpenClaw config agentId와 분리)
+    const _pgSkillAgentId = process.env["RUTIC_AGENT_ID"]?.trim() || params.agentId?.trim();
+    let configWithPgSkills = params.config;
+    if (isPgSessionEnabled() && _pgSkillAgentId) {
+      const pgSkillsDir = await writePgSkillsToTemp(_pgSkillAgentId).catch((err) => {
+        log.warn(`pg-skills write 실패: ${String(err)}`);
+        return null;
+      });
+      if (pgSkillsDir) {
+        configWithPgSkills = {
+          ...params.config,
+          skills: {
+            ...params.config?.skills,
+            load: {
+              ...params.config?.skills?.load,
+              extraDirs: [...(params.config?.skills?.load?.extraDirs ?? []), pgSkillsDir],
+            },
+          },
+        };
+      }
+    }
+
     const { shouldLoadSkillEntries, skillEntries } = resolveEmbeddedRunSkillEntries({
       workspaceDir: effectiveWorkspace,
-      config: params.config,
+      config: configWithPgSkills,
       skillsSnapshot: params.skillsSnapshot,
     });
     restoreSkillEnv = params.skillsSnapshot
@@ -866,6 +895,9 @@ export async function runEmbeddedAttempt(
     let sessionManager: ReturnType<typeof guardSessionManager> | undefined;
     let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
     let removeToolResultContextGuard: (() => void) | undefined;
+    // RUTIC_AGENT_ID 우선 (OpenClaw config의 sessionAgentId와 분리)
+    // inner try/finally 양쪽에서 접근하므로 try 블록 바깥에 선언
+    const _pgRuticAgentId = process.env["RUTIC_AGENT_ID"]?.trim() || sessionAgentId;
     try {
       await repairSessionFileIfNeeded({
         sessionFile: params.sessionFile,
@@ -881,6 +913,16 @@ export async function runEmbeddedAttempt(
         provider: params.provider,
         modelId: params.modelId,
       });
+
+      // RUTIC Postgres shim: 실행 전 Postgres → /tmp 복원
+      if (isPgSessionEnabled() && _pgRuticAgentId) {
+        await restoreSessionFromPostgres({
+          agentId: _pgRuticAgentId,
+          sessionKey: params.sessionKey ?? params.sessionId,
+          sessionId: params.sessionId,
+          sessionFile: params.sessionFile,
+        }).catch((err) => log.warn(`pg-session restore 실패: ${String(err)}`));
+      }
 
       await prewarmSessionFile(params.sessionFile);
       sessionManager = guardSessionManager(SessionManager.open(params.sessionFile), {
@@ -1748,6 +1790,22 @@ export async function runEmbeddedAttempt(
       });
       session?.dispose();
       releaseWsSession(params.sessionId);
+
+      // RUTIC Postgres shim: 임시 스킬 파일 정리
+      if (isPgSessionEnabled() && _pgSkillAgentId) {
+        await cleanupPgSkillsTemp(_pgSkillAgentId).catch(() => undefined);
+      }
+
+      // RUTIC Postgres shim: 실행 후 /tmp → Postgres 동기화
+      if (isPgSessionEnabled() && _pgRuticAgentId) {
+        await syncSessionToPostgres({
+          agentId: _pgRuticAgentId,
+          sessionKey: params.sessionKey ?? params.sessionId,
+          sessionId: params.sessionId,
+          sessionFile: params.sessionFile,
+        }).catch((err) => log.warn(`pg-session sync 실패: ${String(err)}`));
+      }
+
       await sessionLock.release();
     }
   } finally {

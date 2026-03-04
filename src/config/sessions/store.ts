@@ -18,6 +18,7 @@ import {
 import { getFileStatSnapshot, isCacheEnabled, resolveCacheTtlMs } from "../cache-utils.js";
 import { enforceSessionDiskBudget, type SessionDiskBudgetSweepResult } from "./disk-budget.js";
 import { deriveSessionMetaPatch } from "./metadata.js";
+import { loadSessionStoreFromPostgres } from "./pg-session-shim.js";
 import {
   clearSessionStoreCaches,
   dropSessionStoreObjectCache,
@@ -521,6 +522,36 @@ export async function saveSessionStore(
   await withSessionStoreLock(storePath, async () => {
     await saveSessionStoreUnlocked(storePath, store, opts);
   });
+}
+
+/**
+ * RUTIC Postgres 세션 스토어 복원.
+ * RUTIC_PG_URL이 설정된 경우 Postgres agent_sessions에서 세션 메타를 읽어
+ * 현재 인메모리 store에 병합한다 (파일 기반 store가 비어있을 때 폴백).
+ */
+export async function restoreSessionStoreFromPostgres(
+  storePath: string,
+  agentId: string,
+): Promise<void> {
+  const pgStore = await loadSessionStoreFromPostgres(agentId).catch(() => null);
+  if (!pgStore || Object.keys(pgStore).length === 0) {
+    return;
+  }
+
+  const existing = loadSessionStore(storePath, { skipCache: true });
+  let changed = false;
+  for (const [key, meta] of Object.entries(pgStore)) {
+    if (!existing[key]) {
+      existing[key] = {
+        sessionId: meta.sessionId,
+        sessionKey: meta.sessionKey,
+      } as unknown as SessionEntry;
+      changed = true;
+    }
+  }
+  if (changed) {
+    await saveSessionStore(storePath, existing);
+  }
 }
 
 export async function updateSessionStore<T>(

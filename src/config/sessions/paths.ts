@@ -10,6 +10,11 @@ function resolveAgentSessionsDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = () => resolveRequiredHomeDir(env, os.homedir),
 ): string {
+  // RUTIC_PG_URL 설정 시 임시 디렉토리 사용 (Postgres sync shim)
+  if (env.RUTIC_PG_URL?.trim()) {
+    const id = normalizeAgentId(agentId ?? DEFAULT_AGENT_ID);
+    return path.join("/tmp", "rutic-sessions", id);
+  }
   const root = resolveStateDir(env, homedir);
   const id = normalizeAgentId(agentId ?? DEFAULT_AGENT_ID);
   return path.join(root, "agents", id, "sessions");

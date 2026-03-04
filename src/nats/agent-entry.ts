@@ -24,7 +24,9 @@
  *   OPENCLAW_CONFIG            로컬 config 파일 경로 (없으면 gateway에서 수신)
  */
 
+import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { loadConfig, parseConfigJson5, setRuntimeConfigSnapshot } from "../config/config.js";
+import { loadInternalHooks } from "../hooks/loader.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { startAgentRegistration } from "./agent-register.js";
 import { createNatsClient } from "./client.js";
@@ -65,8 +67,6 @@ async function main(): Promise<void> {
 
   if (localConfigPath) {
     // 3a. 로컬 파일 사용 — OPENCLAW_CONFIG 환경 변수를 통해 loadConfig()가 읽음
-    // OpenClaw는 XDG_CONFIG_HOME 또는 HOME 기반 config 경로를 사용하므로
-    // 로컬 파일이 있는 경우 loadConfig()가 자동으로 찾음
     log.info(`agent-entry [${agentId}]: 로컬 config 사용: ${localConfigPath}`);
   } else {
     // 3b. gateway에서 config 수신
@@ -96,9 +96,20 @@ async function main(): Promise<void> {
   // ── 4. Agent 등록 + heartbeat ──────────────────────────────────────────
   const registration = startAgentRegistration(conn, natsCfg);
 
-  // ── 5. task.{agentId} 구독 ─────────────────────────────────────────────
+  // ── 5. 내부 훅 로드 + task.{agentId} 구독 ──────────────────────────────
   // loadConfig()는 setRuntimeConfigSnapshot으로 주입된 config를 반환함
   const cfg = loadConfig();
+
+  // 훅 로드: rutic-pg-context, rutic-memory-writeback 등 bundled 훅 등록
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+  try {
+    const hookCount = await loadInternalHooks(cfg, workspaceDir);
+    if (hookCount > 0) {
+      log.info(`agent-entry [${agentId}]: ${hookCount}개 훅 로드 완료`);
+    }
+  } catch (err) {
+    log.warn(`agent-entry [${agentId}]: 훅 로드 실패 — ${String(err)}`);
+  }
 
   const subscription = startNatsAgentSubscriber({ conn, cfg, natsCfg });
   log.info(`agent-entry [${agentId}]: 준비 완료 — task.${agentId} 대기 중`);
