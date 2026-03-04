@@ -172,7 +172,7 @@ async function discordRest(
       Authorization: `Bot ${token}`,
       "Content-Type": "application/json",
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body != null ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const text = await res.text();
