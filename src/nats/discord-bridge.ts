@@ -550,16 +550,18 @@ async function publishToAgent(
     `task.${agentId}`,
     sc.encode(
       JSON.stringify({
+        code: "EVT_TASK_CREATED",
         taskId,
+        agentId,
         sessionKey,
         from,
-        to: `agent:${agentId}`,
         body: content,
+        timestamp: Date.now(),
         channelType: "discord",
       }),
     ),
   );
-  log.debug(`→ task.${agentId} | taskId=${taskId} session=${sessionKey}`);
+  log.info(`→ task.${agentId} | taskId=${taskId} session=${sessionKey}`);
   return taskId;
 }
 
@@ -824,9 +826,14 @@ async function handleMessage(
     return;
   }
 
-  await sendDiscordMessage(bot.token, msg.channel_id, reply, msg.id).catch((err: Error) => {
-    log.warn(`[${bot.agentId}] Discord 응답 전송 실패: ${err.message}`);
-  });
+  log.info(`[${bot.agentId}] 응답 수신 (${reply.length}자) — Discord 전송 중`);
+  await sendDiscordMessage(bot.token, msg.channel_id, reply, msg.id)
+    .then(() => {
+      log.info(`[${bot.agentId}] Discord 전송 완료`);
+    })
+    .catch((err: Error) => {
+      log.warn(`[${bot.agentId}] Discord 응답 전송 실패: ${err.message}`);
+    });
 }
 
 /** Discord 슬래시 커맨드 처리 */
