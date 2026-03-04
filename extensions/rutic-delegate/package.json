@@ -1,0 +1,12 @@
+{
+  "name": "rutic-delegate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RUTIC delegate_task native plugin",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
