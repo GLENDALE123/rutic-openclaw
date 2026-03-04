@@ -1,72 +1,32 @@
-# RUTIC Standalone Agent — 경량 Docker 이미지
+# RUTIC Standalone Agent
 #
-# HTTP/WebSocket 서버 없이 NATS subscriber로만 동작.
-# gateway(_rpc.config.request)에서 OpenClaw config를 수신하거나
-# OPENCLAW_CONFIG 볼륨 마운트로 로컬 파일을 사용할 수 있다.
+# OpenClaw full 이미지를 베이스로 agent-entry.ts만 실행.
+# dispatchInboundMessage가 OpenClaw 전체 런타임을 사용하므로
+# 별도 경량 빌드 불가 — gateway와 동일 이미지, 다른 엔트리포인트.
 #
 # 환경 변수:
-#   RUTIC_AGENT_ID      에이전트 ID (필수)
-#   RUTIC_NATS_URL      NATS 서버 주소 (기본: nats://localhost:4222)
-#   RUTIC_NATS_CREDS    NATS credentials 경로 (선택)
-#   OPENCLAW_CONFIG     로컬 config 파일 경로 (없으면 gateway에서 수신)
+#   RUTIC_AGENT_ID             에이전트 ID (필수)
+#   RUTIC_NATS_URL             NATS 서버 전체 URL (예: nats://oracle:4222)
+#   RUTIC_NATS_TAILSCALE_HOST  Tailscale 호스트명만 입력 → URL 자동 조립 (예: oracle)
+#                              RUTIC_NATS_URL 미설정 시 사용. MagicDNS 사용 환경 권장.
+#   RUTIC_NATS_CREDS           NATS credentials 경로 (선택)
+#   OPENCLAW_CONFIG            로컬 config 파일 경로 (없으면 gateway에서 수신)
 #
 # 빌드:
-#   docker build -f Dockerfile.agent -t rutic-agent .
+#   docker build -f Dockerfile.agent -t rutic-agent \
+#     --build-arg OPENCLAW_IMAGE=openclaw:local .
 #
 # 실행:
 #   docker run --rm \
 #     -e RUTIC_AGENT_ID=my-agent \
-#     -e RUTIC_NATS_URL=nats://oracle:4222 \
+#     -e RUTIC_NATS_TAILSCALE_HOST=oracle \
 #     rutic-agent
 
-FROM node:22-alpine AS base
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-WORKDIR /app
-
-# ── 의존성 설치 ────────────────────────────────────────────────────────────
-FROM base AS deps
-
-COPY package.json pnpm-lock.yaml ./
-# 프로덕션 의존성만 설치 (dev 도구 제외)
-RUN pnpm install --frozen-lockfile --prod
-
-# nats 패키지가 prod dep에 포함되어 있어야 함
-# (package.json에 "nats": "^2.28.2" 확인)
-
-# ── 소스 빌드 ─────────────────────────────────────────────────────────────
-FROM base AS builder
-
-COPY package.json pnpm-lock.yaml tsconfig.json ./
-RUN pnpm install --frozen-lockfile
-
-COPY src/ ./src/
-
-# TypeScript → JavaScript 컴파일
-RUN pnpm exec tsc -p tsconfig.json --outDir dist-agent \
-    --declaration false --sourceMap false
-
-# ── 실행 이미지 ───────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-WORKDIR /app
-
-# 프로덕션 의존성 복사
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-
-# 컴파일된 소스 복사
-COPY --from=builder /app/dist-agent ./dist-agent
-
-# 비루트 사용자로 실행
-RUN addgroup -S rutic && adduser -S rutic -G rutic
-USER rutic
+ARG OPENCLAW_IMAGE=openclaw:local
+FROM ${OPENCLAW_IMAGE}
 
 # config 볼륨 마운트 포인트
 VOLUME ["/config"]
 
-# 에이전트 기동
-CMD ["node", "dist-agent/nats/agent-entry.js"]
+# agent-entry.ts 엔트리포인트 (dist/는 openclaw:local 이미지 내 컴파일 결과)
+CMD ["node", "dist/nats/agent-entry.js"]

@@ -1,13 +1,29 @@
 import type { SessionSendPolicyConfig } from "./types.base.js";
 
-export type MemoryBackend = "builtin" | "qmd";
+export type MemoryBackend = "builtin" | "qmd" | "rutic";
 export type MemoryCitationsMode = "auto" | "on" | "off";
 export type MemoryQmdSearchMode = "query" | "search" | "vsearch";
+
+export type MemoryRuticConfig = {
+  /** RUTIC memory service URL (e.g. http://localhost:8080) */
+  url: string;
+  /** 에이전트별 네임스페이스 분리 여부 (기본: true) */
+  agentScoped?: boolean;
+  /** 전역 공유 네임스페이스 (agentScoped=false 시 사용) */
+  namespace?: string;
+  /** 검색 결과 최대 수 (기본: 6) */
+  maxResults?: number;
+  /** 컨텍스트 주입 최대 문자 수 (기본: 4000) */
+  maxInjectedChars?: number;
+  /** 요청 타임아웃 ms (기본: 4000) */
+  timeoutMs?: number;
+};
 
 export type MemoryConfig = {
   backend?: MemoryBackend;
   citations?: MemoryCitationsMode;
   qmd?: MemoryQmdConfig;
+  rutic?: MemoryRuticConfig;
 };
 
 export type MemoryQmdConfig = {

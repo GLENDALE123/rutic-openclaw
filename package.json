@@ -94,6 +94,7 @@
     "format:swift": "swiftformat --lint --config .swiftformat apps/macos/Sources apps/ios/Sources apps/shared/OpenClawKit/Sources",
     "gateway:dev": "OPENCLAW_SKIP_CHANNELS=1 CLAWDBOT_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway",
     "gateway:dev:reset": "OPENCLAW_SKIP_CHANNELS=1 CLAWDBOT_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway --reset",
+    "gateway:standalone": "node --import tsx src/nats/gateway-standalone.ts",
     "gateway:watch": "node scripts/watch-node.mjs gateway --force",
     "gen:host-env-policy:swift": "node scripts/generate-host-env-security-policy-swift.mjs --write",
     "ghsa:patch": "node scripts/ghsa-patch.mjs",
@@ -207,6 +208,7 @@
     "linkedom": "^0.18.12",
     "long": "^5.3.2",
     "markdown-it": "^14.1.1",
+    "nats": "^2.28.2",
     "node-domexception": "npm:@nolyfill/domexception@^1.0.28",
     "node-edge-tts": "^1.2.10",
     "opusscript": "^0.1.1",
@@ -220,7 +222,6 @@
     "tar": "7.5.9",
     "tslog": "^4.10.2",
     "undici": "^7.22.0",
-    "nats": "^2.28.2",
     "ws": "^8.19.0",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"

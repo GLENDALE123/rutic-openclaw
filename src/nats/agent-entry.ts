@@ -16,22 +16,21 @@
  *   6. SIGINT/SIGTERM 대기 후 graceful shutdown
  *
  * 환경 변수:
- *   RUTIC_AGENT_ID      에이전트 ID (필수)
- *   RUTIC_NATS_URL      NATS 서버 (기본: nats://localhost:4222)
- *   RUTIC_NATS_CREDS    NATS credentials 파일 경로 (선택)
- *   OPENCLAW_CONFIG     로컬 config 파일 경로 (없으면 gateway에서 수신)
+ *   RUTIC_AGENT_ID             에이전트 ID (필수)
+ *   RUTIC_NATS_URL             NATS 서버 전체 URL (예: nats://oracle:4222)
+ *   RUTIC_NATS_TAILSCALE_HOST  Tailscale 호스트명 → nats://{host}:4222 자동 조립
+ *                              RUTIC_NATS_URL 미설정 시 사용 (예: oracle)
+ *   RUTIC_NATS_CREDS           NATS credentials 파일 경로 (선택)
+ *   OPENCLAW_CONFIG            로컬 config 파일 경로 (없으면 gateway에서 수신)
  */
 
-import {
-  loadConfig,
-  parseConfigJson5,
-  setRuntimeConfigSnapshot,
-} from "../config/config.js";
+import { loadConfig, parseConfigJson5, setRuntimeConfigSnapshot } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { startAgentRegistration } from "./agent-register.js";
-import { createConfigSync } from "./config-sync.js";
 import { createNatsClient } from "./client.js";
+import { createConfigSync } from "./config-sync.js";
 import { startNatsAgentSubscriber } from "./subscriber.js";
+import { resolveNatsServers } from "./transport.js";
 import type { NatsTransportConfig } from "./types.js";
 
 const log = createSubsystemLogger("agent-entry");
@@ -48,8 +47,9 @@ async function main(): Promise<void> {
 
   // ── 2. NATS 설정 해석 (env 변수에서 직접 구성) ──────────────────────
   // OpenClaw config가 아직 없으므로 NATS 설정은 env 변수에서만 읽는다.
+  // resolveNatsServers: RUTIC_NATS_URL → RUTIC_NATS_TAILSCALE_HOST → Tailscale 자동 감지 → localhost
   const natsCfg: NatsTransportConfig = {
-    servers: process.env["RUTIC_NATS_URL"]?.trim() ?? "nats://localhost:4222",
+    servers: resolveNatsServers(),
     agentId,
     credentialsPath: process.env["RUTIC_NATS_CREDS"]?.trim(),
     taskSubjectPrefix: "task",

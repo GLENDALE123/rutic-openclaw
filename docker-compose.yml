@@ -9,6 +9,11 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      # RUTIC NATS 트랜스포트 — 설정 시 에이전트 구독 + config server 자동 시작
+      RUTIC_AGENT_ID: ${RUTIC_AGENT_ID:-}
+      RUTIC_NATS_URL: ${RUTIC_NATS_URL:-}
+      RUTIC_NATS_TAILSCALE_HOST: ${RUTIC_NATS_TAILSCALE_HOST:-}
+      RUTIC_NATS_CREDS: ${RUTIC_NATS_CREDS:-}
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace

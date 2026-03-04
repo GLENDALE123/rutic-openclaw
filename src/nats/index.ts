@@ -12,5 +12,7 @@ export type {
 } from "./types.js";
 export { createConfigSync } from "./config-sync.js";
 export type { ConfigSync } from "./config-sync.js";
+export { startGatewayConfigServer } from "./gateway-config-server.js";
+export type { GatewayConfigServer } from "./gateway-config-server.js";
 export { startAgentRegistration } from "./agent-register.js";
 export type { AgentRegistration } from "./agent-register.js";

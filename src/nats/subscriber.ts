@@ -62,10 +62,19 @@ async function handleTask(params: {
   payload: NatsTaskPayload;
   replySubject: string;
 }): Promise<void> {
-  const { conn, cfg, natsCfg, payload, replySubject } = params;
+  const { conn, cfg, payload, replySubject } = params;
   const { taskId, agentId, sessionKey, body, from, correlationId } = payload;
 
-  log.verbose(`nats-agent [${agentId}]: task=${taskId} body="${body.slice(0, 80)}"`);
+  const startedAt = Date.now();
+  let firstReplyAt: number | null = null;
+  let replyCount = 0;
+
+  // ── [1] task 수신 ─────────────────────────────────────────────────────────
+  log.info(
+    `[TRACE] task 수신 | taskId=${taskId} agentId=${agentId} ` +
+      `from=${from ?? "nats"} sessionKey=${sessionKey ?? "-"} ` +
+      `body="${body.slice(0, 120)}"`,
+  );
 
   const publish = (reply: NatsReplyPayload): void => {
     try {
@@ -91,8 +100,25 @@ async function handleTask(params: {
 
   const dispatcher = createReplyDispatcher({
     deliver: async (replyPayload: ReplyPayload, info) => {
-      if (replyPayload.isReasoning) return;
+      if (replyPayload.isReasoning) {
+        return;
+      }
+
+      const now = Date.now();
+      replyCount++;
+      if (firstReplyAt === null) {
+        firstReplyAt = now;
+      }
+
       const text = replyPayload.text ?? "";
+
+      // ── [2] LLM 청크/최종 응답 ───────────────────────────────────────────
+      log.info(
+        `[TRACE] reply #${replyCount} | kind=${info.kind} isFinal=${info.kind === "final"} ` +
+          `ttfr=${firstReplyAt - startedAt}ms elapsed=${now - startedAt}ms ` +
+          `chars=${text.length} preview="${text.slice(0, 80)}"`,
+      );
+
       publish({
         code: "EVT_REPLY_SEND",
         taskId,
@@ -101,7 +127,7 @@ async function handleTask(params: {
         text,
         isFinal: info.kind === "final",
         isError: replyPayload.isError,
-        timestamp: Date.now(),
+        timestamp: now,
         correlationId,
       });
     },
@@ -112,7 +138,13 @@ async function handleTask(params: {
     },
   });
 
-  await dispatchInboundMessage({
+  // ── [3] dispatchInboundMessage 진입 ──────────────────────────────────────
+  log.info(
+    `[TRACE] dispatch 시작 | taskId=${taskId} ` +
+      `ctx.From=${from ?? `nats:task:${taskId}`} ctx.To=agent:${agentId}`,
+  );
+
+  const result = await dispatchInboundMessage({
     ctx: {
       Body: body,
       RawBody: body,
@@ -125,4 +157,19 @@ async function handleTask(params: {
     cfg,
     dispatcher,
   });
+
+  // ── [4] dispatch 완료 ─────────────────────────────────────────────────────
+  const totalMs = Date.now() - startedAt;
+  log.info(
+    `[TRACE] dispatch 완료 | taskId=${taskId} ` +
+      `queuedFinal=${result.queuedFinal} counts=${JSON.stringify(result.counts)} ` +
+      `replies=${replyCount} totalMs=${totalMs}`,
+  );
+
+  if (!result.queuedFinal && replyCount === 0) {
+    log.warn(
+      `[TRACE] 응답 없음 | taskId=${taskId} — ` +
+        `LLM 미호출 가능성 (provider 미설정 또는 라우팅 차단)`,
+    );
+  }
 }
