@@ -134,26 +134,344 @@ const INTENTS =
   (1 << 12) | // DIRECT_MESSAGES
   (1 << 15); // MESSAGE_CONTENT (privileged — Developer Portal에서 활성화 필요)
 
-// Discord 슬래시 커맨드 정의 (OpenClaw 내부 커맨드 매핑)
+// Discord 슬래시 커맨드 정의 (OpenClaw 전체 커맨드 매핑)
+// type 3 = STRING, type 4 = INTEGER, type 10 = NUMBER
 const SLASH_COMMANDS = [
-  { name: "compact", description: "대화 컨텍스트를 압축합니다 (/compact)" },
-  { name: "reset", description: "현재 세션을 초기화합니다 (/reset)" },
-  { name: "new", description: "새 세션을 시작합니다 (/new)" },
+  // ── 정보 / 도움 ──────────────────────────────────────────────────────────
+  { name: "help", description: "사용 가능한 커맨드를 표시합니다." },
+  { name: "commands", description: "모든 슬래시 커맨드 목록을 표시합니다." },
+  { name: "status", description: "현재 상태를 표시합니다." },
+  { name: "whoami", description: "발신자 ID를 표시합니다." },
+  { name: "context", description: "컨텍스트 빌드 방식을 설명합니다." },
+  {
+    name: "usage",
+    description: "토큰 사용량 및 비용 요약을 표시합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "off / tokens / full / cost",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "off", value: "off" },
+          { name: "tokens", value: "tokens" },
+          { name: "full", value: "full" },
+          { name: "cost", value: "cost" },
+        ],
+      },
+    ],
+  },
+
+  // ── 세션 관리 ────────────────────────────────────────────────────────────
+  {
+    name: "new",
+    description: "새 세션을 시작합니다.",
+    options: [{ name: "args", description: "추가 인자", type: 3, required: false }],
+  },
+  {
+    name: "reset",
+    description: "현재 세션을 초기화합니다.",
+    options: [{ name: "args", description: "추가 인자", type: 3, required: false }],
+  },
+  {
+    name: "compact",
+    description: "대화 컨텍스트를 압축합니다.",
+    options: [
+      { name: "instructions", description: "추가 압축 지시사항", type: 3, required: false },
+    ],
+  },
+  { name: "stop", description: "현재 실행을 중단합니다." },
+  { name: "restart", description: "OpenClaw를 재시작합니다." },
+  {
+    name: "session",
+    description: "세션 레벨 설정을 관리합니다 (idle, max-age 등).",
+    options: [
+      { name: "action", description: "idle | max-age", type: 3, required: false },
+      { name: "value", description: "지속시간 (24h, 90m) 또는 off", type: 3, required: false },
+    ],
+  },
+  {
+    name: "export-session",
+    description: "현재 세션을 HTML 파일로 내보냅니다.",
+    options: [
+      { name: "path", description: "출력 경로 (기본: workspace)", type: 3, required: false },
+    ],
+  },
+
+  // ── 모델 / 옵션 ──────────────────────────────────────────────────────────
+  {
+    name: "model",
+    description: "현재 모델을 표시하거나 변경합니다.",
+    options: [{ name: "model", description: "모델 ID (provider/model)", type: 3, required: false }],
+  },
+  {
+    name: "models",
+    description: "모델 프로바이더 목록을 표시합니다.",
+    options: [{ name: "args", description: "추가 인자", type: 3, required: false }],
+  },
   {
     name: "think",
-    description: "추론 깊이를 설정합니다 (/think)",
+    description: "추론 깊이를 설정합니다.",
     options: [
       {
         name: "level",
-        description: "추론 수준 (off / low / medium / high / xhigh)",
-        type: 3, // STRING
-        required: true,
+        description: "off / minimal / low / medium / high / xhigh",
+        type: 3,
+        required: false,
         choices: [
           { name: "off", value: "off" },
+          { name: "minimal", value: "minimal" },
           { name: "low", value: "low" },
           { name: "medium", value: "medium" },
           { name: "high", value: "high" },
           { name: "xhigh", value: "xhigh" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "verbose",
+    description: "Verbose 모드를 토글합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "on / off",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "on", value: "on" },
+          { name: "off", value: "off" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "reasoning",
+    description: "추론 가시성을 토글합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "on / off / stream",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "on", value: "on" },
+          { name: "off", value: "off" },
+          { name: "stream", value: "stream" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "elevated",
+    description: "Elevated 모드를 토글합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "on / off / ask / full",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "on", value: "on" },
+          { name: "off", value: "off" },
+          { name: "ask", value: "ask" },
+          { name: "full", value: "full" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "activation",
+    description: "그룹 활성화 모드를 설정합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "mention / always",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "mention", value: "mention" },
+          { name: "always", value: "always" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "send",
+    description: "전송 정책을 설정합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "on / off / inherit",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "on", value: "on" },
+          { name: "off", value: "off" },
+          { name: "inherit", value: "inherit" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "tts",
+    description: "텍스트-음성 변환(TTS)을 제어합니다.",
+    options: [
+      { name: "action", description: "TTS 동작", type: 3, required: false },
+      { name: "value", description: "프로바이더, 한도 또는 텍스트", type: 3, required: false },
+    ],
+  },
+
+  // ── 도구 / 실행 ──────────────────────────────────────────────────────────
+  {
+    name: "skill",
+    description: "스킬을 이름으로 실행합니다.",
+    options: [
+      { name: "name", description: "스킬 이름", type: 3, required: true },
+      { name: "input", description: "스킬 입력값", type: 3, required: false },
+    ],
+  },
+  {
+    name: "allowlist",
+    description: "Allowlist 항목을 조회/추가/삭제합니다.",
+    options: [{ name: "args", description: "추가 인자", type: 3, required: false }],
+  },
+  {
+    name: "approve",
+    description: "실행 요청을 승인하거나 거부합니다.",
+    options: [{ name: "args", description: "추가 인자", type: 3, required: false }],
+  },
+  {
+    name: "bash",
+    description: "호스트 셸 명령을 실행합니다.",
+    options: [{ name: "command", description: "셸 명령어", type: 3, required: true }],
+  },
+
+  // ── 서브에이전트 / 멀티에이전트 ─────────────────────────────────────────
+  {
+    name: "subagents",
+    description: "서브에이전트 실행을 조회/종료/로그/스폰/스티어합니다.",
+    options: [
+      {
+        name: "action",
+        description: "list | kill | log | info | send | steer | spawn",
+        type: 3,
+        required: false,
+      },
+      { name: "target", description: "런 ID, 인덱스, 또는 세션 키", type: 3, required: false },
+      { name: "value", description: "추가 입력 (메시지 등)", type: 3, required: false },
+    ],
+  },
+  {
+    name: "steer",
+    description: "실행 중인 서브에이전트에 가이던스를 전송합니다.",
+    options: [
+      { name: "target", description: "레이블, 런 ID, 또는 인덱스", type: 3, required: true },
+      { name: "message", description: "스티어링 메시지", type: 3, required: true },
+    ],
+  },
+  {
+    name: "kill",
+    description: "실행 중인 서브에이전트를 종료합니다.",
+    options: [
+      { name: "target", description: "레이블, 런 ID, 인덱스, 또는 all", type: 3, required: false },
+    ],
+  },
+  { name: "agents", description: "현재 세션에 바인딩된 에이전트를 나열합니다." },
+  {
+    name: "focus",
+    description: "이 Discord 스레드를 세션 대상에 바인딩합니다.",
+    options: [
+      {
+        name: "target",
+        description: "서브에이전트 레이블/인덱스 또는 세션 키",
+        type: 3,
+        required: false,
+      },
+    ],
+  },
+  { name: "unfocus", description: "현재 Discord 스레드 바인딩을 제거합니다." },
+  {
+    name: "acp",
+    description: "ACP 세션 및 런타임 옵션을 관리합니다.",
+    options: [
+      { name: "action", description: "ACP 동작", type: 3, required: false },
+      { name: "value", description: "동작 인자", type: 3, required: false },
+    ],
+  },
+
+  // ── 설정 / 디버그 ────────────────────────────────────────────────────────
+  {
+    name: "config",
+    description: "설정값을 조회하거나 변경합니다.",
+    options: [
+      { name: "action", description: "show | get | set | unset", type: 3, required: false },
+      { name: "path", description: "설정 경로", type: 3, required: false },
+      { name: "value", description: "설정값 (set 시)", type: 3, required: false },
+    ],
+  },
+  {
+    name: "debug",
+    description: "런타임 디버그 오버라이드를 설정합니다.",
+    options: [
+      { name: "action", description: "show | reset | set | unset", type: 3, required: false },
+      { name: "path", description: "디버그 경로", type: 3, required: false },
+      { name: "value", description: "값 (set 시)", type: 3, required: false },
+    ],
+  },
+  {
+    name: "queue",
+    description: "큐 설정을 조정합니다.",
+    options: [
+      {
+        name: "mode",
+        description: "steer | interrupt | followup | collect | steer-backlog",
+        type: 3,
+        required: false,
+      },
+      {
+        name: "debounce",
+        description: "디바운스 지속시간 (예: 500ms, 2s)",
+        type: 3,
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "exec",
+    description: "이 세션의 exec 기본값을 설정합니다.",
+    options: [
+      {
+        name: "host",
+        description: "sandbox | gateway | node",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "sandbox", value: "sandbox" },
+          { name: "gateway", value: "gateway" },
+          { name: "node", value: "node" },
+        ],
+      },
+      {
+        name: "security",
+        description: "deny | allowlist | full",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "deny", value: "deny" },
+          { name: "allowlist", value: "allowlist" },
+          { name: "full", value: "full" },
+        ],
+      },
+      {
+        name: "ask",
+        description: "off | on-miss | always",
+        type: 3,
+        required: false,
+        choices: [
+          { name: "off", value: "off" },
+          { name: "on-miss", value: "on-miss" },
+          { name: "always", value: "always" },
         ],
       },
     ],
